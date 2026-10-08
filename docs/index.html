@@ -1,0 +1,118 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flow Duration Curve and Run-of-River Hydropower Calculator</title><style>
+:root{--bg:#fff;--fg:#1b1f23;--card:#eef1f4;--env:#0072B2;--use:#E69F00;--sp:#8a9099;--wat:#9cc9ee;--gnd:#c9c2b4}
+@media(prefers-color-scheme:dark){:root{--bg:#14181c;--fg:#e8eaed;--card:#222931;--wat:#2f6fa3;--gnd:#4a463e}}
+body{font:15px/1.4 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--fg)}main{max-width:960px;margin:auto;padding:12px}
+fieldset{background:var(--card);border:0;border-radius:8px;margin:8px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}legend{font-weight:600}
+label{display:flex;flex-direction:column;font-weight:500}small{font-weight:400;opacity:.8}input,select,textarea,button{font:inherit;padding:4px;color:inherit;background:var(--bg);border:1px solid var(--sp);border-radius:4px}
+button{cursor:pointer}canvas{width:100%;border:1px solid var(--sp);border-radius:8px}td,th{padding:2px 10px;border-bottom:1px solid var(--sp);text-align:left}#msg{color:#b3261e}.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+</style></head><body><main>
+<h1>Flow Duration Curve and Run-of-River Hydropower Calculator</h1>
+<p>Pre-feasibility estimate only. Turbine efficiency curves are typical simplified assumptions, not manufacturer data. The animated scene is a schematic for understanding: not to scale, and turbine speed and water motion are illustrative.</p>
+<fieldset><legend>1. River flow record (daily values, m³/s)</legend>
+<label>Paste numbers<textarea id="flows" rows="3" placeholder="1.2 3.4 5.6 ..."></textarea><small>One value per day, separated by spaces, commas or new lines.</small></label>
+<label>Or load a CSV file<input type="file" id="file" accept=".csv,.txt"><small>Optional date column first (2005-07-31), then flow.</small></label>
+<label>Example<button id="ex" type="button">Load example (synthetic data)</button><small>Made-up seasonal series, not a real river.</small></label></fieldset>
+<fieldset><legend>2. Plant</legend>
+<label>Gross head (m)<input id="gross" type="number" value="60" min="0"><small>Height drop from intake to turbine (example value).</small></label>
+<label>Head loss (% of gross)<input id="loss" type="number" value="5"></label>
+<label>Net head (m), optional<input id="net" type="number"><small>Net head = gross head minus losses in the penstock. Fill this to override.</small></label>
+<label>Turbine<select id="turb"><option value="francis">Francis</option><option value="pelton">Pelton</option><option value="kaplan">Kaplan</option><option value="crossflow">Cross-flow</option><option value="constant">Constant efficiency</option></select><small>Typical simplified curves.</small></label>
+<label>Constant efficiency<input id="ceta" type="number" value="0.88" step="0.01"></label>
+<label>Minimum flow (m³/s), optional<input id="minq" type="number"><small>Below this the turbine stops. Blank = turbine default.</small></label>
+<label>Generator efficiency<input id="eg" type="number" value="0.97" step="0.01"></label>
+<label>Transformer efficiency<input id="et" type="number" value="0.99" step="0.01"></label>
+<label>Availability (% of year)<input id="av" type="number" value="95"></label>
+<label>Environmental flow type<select id="envm"><option value="percent">% of river flow</option><option value="fixed">Fixed m³/s</option></select></label>
+<label>Environmental flow value<input id="envv" type="number" value="10"><small>Water left in the river. Use your local rule.</small></label>
+<label>Water density (kg/m³)<input id="rho" type="number" value="1000"></label><label>Gravity (m/s²)<input id="g" type="number" value="9.81"></label>
+<label>Plotting position<select id="pos"><option>weibull</option><option>cunnane</option><option>gringorten</option><option>hazen</option><option>blom</option></select><small>Exceedance probability = share of time a flow is equalled or exceeded.</small></label></fieldset>
+<fieldset><legend>3. Design flow (flow through the turbine)</legend>
+<label>Exceedance: Q<span id="pctv">40</span><input id="pct" type="range" min="1" max="99" value="40"><small>Move to change the design flow; results update live.</small></label>
+<label>Or design flow (m³/s), optional<input id="qd" type="number"><small>Overrides the slider.</small></label></fieldset>
+<p id="msg" role="alert"></p><div id="res"></div>
+<h2>Simulation playback</h2>
+<div class="row"><button id="play">Play</button><button id="rst">Restart</button><button id="bk">Step back</button><button id="fw">Step forward</button><button id="wet">Wettest day</button><button id="dry">Driest day</button>
+<label>Speed <select id="spd"><option value="1">1x</option><option value="5">5x</option><option value="20" selected>20x</option><option value="100">100x</option></select></label><button id="png">Save scene as PNG</button></div>
+<input id="scrub" type="range" min="0" max="0" value="0" style="width:100%" aria-label="Jump to a date">
+<canvas id="cv" width="1800" height="1120" role="img" aria-label="Schematic of river, intake weir, penstock, powerhouse, hydrograph and flow duration curve with live values listed below"></canvas>
+<pre id="stats" aria-live="off"></pre>
+<p><small>Limitations: no storage or peaking, fixed head, simplified turbine curves, no sediment, ice or climate change; long records are needed. This browser version handles daily data (use the Python version for monthly data, seasonal curves, figures and economics).</small></p>
+<script>
+/*CORE*/
+const TURB={pelton:{f:[.1,.2,.4,.7,1],e:[.78,.85,.89,.9,.89],m:.1},francis:{f:[.4,.6,.8,1],e:[.75,.87,.92,.91],m:.4},kaplan:{f:[.2,.4,.6,.8,1],e:[.78,.88,.91,.92,.91],m:.2},crossflow:{f:[.15,.3,.5,.75,1],e:[.65,.76,.82,.84,.83],m:.15}};
+const POS={weibull:0,cunnane:.4,gringorten:.44,hazen:.5,blom:.375};
+function interp(x,xs,ys){const n=xs.length;if(x<=xs[0])return ys[0];if(x>=xs[n-1])return ys[n-1];let lo=0,hi=n-1;while(hi-lo>1){const m=(lo+hi)>>1;if(xs[m]<=x)lo=m;else hi=m}return ys[lo]+(ys[hi]-ys[lo])*(x-xs[lo])/(xs[hi]-xs[lo])}
+function parseCSV(t){const q=[],d=[];for(const l of t.split(/\r?\n/)){const s=l.trim();if(!s||s[0]==='#')continue;const c=s.split(/[,;\t ]+/),v=parseFloat(c[c.length-1]);if(isNaN(v)&&!q.length&&/[a-z]/i.test(s))continue;q.push(v>=0?v:NaN);d.push(c.length>1?c[0]:null)}
+const yr=d.map((x,i)=>x?parseInt(x.slice(0,4)):Math.floor(i/365));return{q:Float64Array.from(q),d,yr}}
+function fdc(q,m){const s=Array.from(q).filter(v=>v===v).sort((a,b)=>b-a),n=s.length,a=POS[m]||0;return{Q:s,P:s.map((_,i)=>(i+1-a)/(n+1-2*a))}}
+const flowAt=(F,p)=>interp(p/100,F.P,F.Q);
+const eff=pl=>pl.turbine==='constant'?{f:[0,1],e:[pl.constEta,pl.constEta],m:0}:TURB[pl.turbine];
+const envReq=(pl,q)=>pl.envMode==='percent'?q*pl.envValue/100:pl.envValue;
+const netHead=pl=>pl.netHead!=null?pl.netHead:pl.gross*(1-pl.loss/100);
+function split(pl,q,qd){const env=Math.min(q,envReq(pl,q)),av=q-env;let t=Math.min(av,qd);const qm=pl.minFlow!=null?pl.minFlow:eff(pl).m*qd;if(t<qm)t=0;return[env,t,av-t]}
+function designFromExc(pl,F,pct){const q=flowAt(F,pct);return Math.max(q-Math.min(q,envReq(pl,q)),0)}
+const riverFull=(pl,qd)=>pl.envMode==='percent'?(pl.envValue>=100?Infinity:qd/(1-pl.envValue/100)):qd+pl.envValue;
+function simulate(q,pl,qd,hrs,yr){const n=q.length,T=eff(pl),H=netHead(pl),av=pl.avail/100,A=()=>new Float64Array(n);
+const o={n,q,env:A(),turb:A(),spill:A(),power:A(),en:A(),cum:A(),ytd:A(),vh:A(),qd,hrs};let c=0,y=0,vh=0;
+o.cap=interp(1,T.f,T.e)*pl.etaGen*pl.etaTrans*pl.rho*pl.g*qd*H/1000;
+for(let i=0;i<n;i++){const[e,t,s]=split(pl,q[i],qd);let p=0;if(t>0)p=interp(qd>0?t/qd:0,T.f,T.e)*pl.etaGen*pl.etaTrans*pl.rho*pl.g*t*H/1000;
+const en=p===p?p*hrs*av:0;if(i>0&&yr[i]!==yr[i-1])y=0;c+=en;y+=en;if(q[i]===q[i])vh+=hrs;
+o.env[i]=e;o.turb[i]=t;o.spill[i]=s;o.power[i]=p;o.en[i]=en;o.cum[i]=c;o.ytd[i]=y;o.vh[i]=vh}return o}
+function state(o,i){return{q:o.q[i],env:o.env[i],turb:o.turb[i],spill:o.spill[i],power:o.power[i],cum:o.cum[i],ytd:o.ytd[i],cf:o.vh[i]>0&&o.cap>0?o.cum[i]/(o.cap*o.vh[i]):0}}
+function summarize(o){const n=o.n,tot=o.cum[n-1],vh=o.vh[n-1],yrs=vh/8766;let rv=0,tv=0;for(let i=0;i<n;i++)if(o.q[i]===o.q[i]){rv+=o.q[i]*o.hrs;tv+=o.turb[i]*o.hrs}
+return{installed_kw:o.cap,total_energy_kwh:tot,annual_energy_gwh:tot/yrs/1e6,capacity_factor:o.cap>0?tot/(o.cap*vh):0,flow_used_pct:rv>0?100*tv/rv:0}}
+/*ENDCORE*/
+const $=id=>document.getElementById(id),cv=$('cv'),ctx=cv.getContext('2d');ctx.scale(2,2);
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let rec,F,Fr,pl,sim,qmax=1,pos=0,playing=false,off=0,ang=0,reveal=reduce?1:0,hp,fp,col={};
+const cs=()=>{const s=getComputedStyle(document.documentElement);for(const k of['bg','fg','card','env','use','sp','wat','gnd'])col[k]=s.getPropertyValue('--'+k).trim()};cs();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',cs);
+const msg=t=>$('msg').textContent=t,num=id=>$(id).value===''?null:+$(id).value;
+function load(text){rec=parseCSV(text);const v=rec.q.filter(x=>x===x).length,bad=rec.q.length-v;
+if(v<30){rec=null;sim=null;$('res').innerHTML='';return msg('Only '+v+' valid daily values. I need at least 30.')}
+$('scrub').max=rec.q.length-1;pos=0;reveal=reduce?1:0;pause();rec.bad=bad;recalc()}
+function recalc(){const bad=rec&&rec.bad;if(!rec)return;pl={gross:num('gross'),loss:num('loss')||0,netHead:num('net'),turbine:$('turb').value,constEta:num('ceta'),minFlow:num('minq'),etaGen:num('eg'),etaTrans:num('et'),avail:num('av'),rho:num('rho'),g:num('g'),envMode:$('envm').value,envValue:num('envv')||0};
+if(netHead(pl)>0===false||isNaN(netHead(pl)))return msg('Please enter a gross head or net head above zero.');
+const notes=[];if(bad)notes.push(bad+' missing/negative value(s) excluded');const z=rec.q.filter(x=>x===0).length;if(z)notes.push(z+' zero-flow day(s) kept');
+if(rec.q.length<3650)notes.push('record shorter than 10 years: estimates are less reliable');
+F=fdc(rec.q,$('pos').value);Fr={Q:F.Q.slice().reverse(),P:F.P.slice().reverse()};$('pctv').textContent=$('pct').value;
+const qd=num('qd')??designFromExc(pl,F,+$('pct').value);if(!(qd>0))return msg('After the environmental flow nothing is left for the turbine.');
+sim=simulate(rec.q,pl,qd,24,rec.yr);qmax=Math.max(...F.Q);const r=summarize(sim);msg(notes.join('; '));
+const Q=[5,10,25,40,50,75,90,95].map(p=>'<tr><td>Q'+p+'</td><td>'+flowAt(F,p).toFixed(2)+' m³/s</td></tr>').join('');
+$('res').innerHTML='<table><tr><th>Design flow</th><td>'+qd.toFixed(2)+' m³/s</td></tr><tr><th>Net head</th><td>'+netHead(pl).toFixed(1)+' m</td></tr><tr><th>Installed capacity</th><td>'+r.installed_kw.toFixed(0)+' kW</td></tr><tr><th>Average annual energy</th><td>'+r.annual_energy_gwh.toFixed(2)+' GWh/year</td></tr><tr><th>Capacity factor</th><td>'+(100*r.capacity_factor).toFixed(1)+' % (average power ÷ installed capacity)</td></tr><tr><th>Flow volume used</th><td>'+r.flow_used_pct.toFixed(1)+' %</td></tr></table><details><summary>Flow percentiles</summary><table>'+Q+'</table></details>';
+const X=(i)=>10+550*i/(rec.q.length-1),Y=q=>540-220*q/qmax;hp=new Path2D();let st=false;rec.q.forEach((q,i)=>{if(q!==q){st=false;return}st?hp.lineTo(X(i),Y(q)):hp.moveTo(X(i),Y(q));st=true});
+fp=new Path2D();F.Q.forEach((q,i)=>{const x=590+300*F.P[i],y=Y(q);i?fp.lineTo(x,y):fp.moveTo(x,y)})}
+function pause(){playing=false;$('play').textContent='Play'}
+function go(i){pos=Math.max(0,Math.min(rec.q.length-1,i));$('scrub').value=pos}
+function draw(){if(!sim)return;const i=Math.floor(pos),s=state(sim,i),c=col,W=900;ctx.clearRect(0,0,W,560);ctx.lineCap='butt';ctx.setLineDash([]);
+const nd=s.q!==s.q,lv=nd?0:s.q/qmax,w=f=>f>0?Math.max(1.5,42*f/qmax):0,ly=232-(25+75*Math.sqrt(lv)),T=(t,x,y,al)=>{ctx.fillStyle=c.fg;ctx.textAlign=al||'left';ctx.font='12px system-ui';ctx.fillText(t,x,y)};
+ctx.fillStyle=c.gnd;ctx.fillRect(0,240,W,12);ctx.fillStyle=c.wat;ctx.fillRect(0,ly,290,240-ly);ctx.fillRect(310,230-4*(1+lv*3),W-310,10+4*(1+lv*3));
+ctx.fillStyle=c.gnd;ctx.fillRect(290,150,20,90);T('Intake weir',255,142);T('Upstream river level (schematic)',8,ly-6);
+const flow=(f,x0,y0,x1,y1,k,lw)=>{if(!(f>0))return;ctx.strokeStyle=k;ctx.lineWidth=lw;ctx.setLineDash([16,14]);ctx.lineDashOffset=-off;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();ctx.setLineDash([])};
+flow(s.q,0,ly+(240-ly)/2,285,ly+(240-ly)/2,c.fg,2);
+ctx.strokeStyle=c.card;ctx.lineWidth=46;ctx.beginPath();ctx.moveTo(280,208);ctx.lineTo(540,208);ctx.lineTo(600,238);ctx.stroke();T('Penstock',360,176);
+ctx.strokeStyle=c.use;ctx.lineWidth=w(s.turb)||0;ctx.setLineDash([16,14]);ctx.lineDashOffset=-off;ctx.beginPath();ctx.moveTo(280,208);ctx.lineTo(540,208);ctx.lineTo(600,238);ctx.stroke();ctx.setLineDash([]);
+flow(s.env,312,236,880,236,c.env,w(s.env));flow(s.spill,318,152,318,226,c.sp,w(s.spill));
+T('Environmental flow '+(s.env||0).toFixed(1)+' m³/s',560,270);T('Spill '+(s.spill||0).toFixed(1)+' m³/s',325,170);T('Turbine flow '+(s.turb||0).toFixed(1)+' m³/s',330,226);
+ctx.fillStyle=c.gnd;ctx.fillRect(560,212,110,50);T('Powerhouse',565,208);ctx.save();ctx.translate(615,240);ctx.rotate(ang);ctx.strokeStyle=c.fg;ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,18,0,6.29);for(let k=0;k<4;k++){ctx.moveTo(0,0);ctx.lineTo(18*Math.cos(k*Math.PI/2),18*Math.sin(k*Math.PI/2))}ctx.stroke();ctx.restore();
+T(nd?'No data this step':s.turb>0?'Generating (runner speed schematic)':'Below minimum flow, not generating',680,236);T('Tailrace',700,285);
+ctx.strokeStyle=c.fg;ctx.lineWidth=1;ctx.strokeRect(700,212,180,16);ctx.fillStyle=c.use;ctx.fillRect(700,212,180*Math.min(1,(s.power||0)/sim.cap),16);T('Power '+(s.power||0).toFixed(0)+' kW of '+sim.cap.toFixed(0)+' kW installed',700,208);
+T('Hydrograph: river flow (m³/s) over time',10,300);ctx.strokeStyle=c.fg;ctx.lineWidth=1;ctx.stroke(hp);T('Flow duration curve: flow vs % of time exceeded',590,300);T('0%',590,556);T('100%',870,556);
+const rq=riverFull(pl,sim.qd),yq=540-220*Math.min(rq,qmax)/qmax;ctx.setLineDash([5,4]);ctx.strokeStyle=c.use;ctx.beginPath();ctx.moveTo(10,yq);ctx.lineTo(560,yq);ctx.moveTo(590,yq);ctx.lineTo(890,yq);ctx.stroke();ctx.setLineDash([]);T('Design flow reached at river flow '+rq.toFixed(1)+' m³/s',12,yq-4);
+ctx.save();ctx.beginPath();ctx.rect(590,300,300*reveal+1,260);ctx.clip();ctx.strokeStyle=c.env;ctx.lineWidth=2;ctx.stroke(fp);ctx.restore();
+if(!nd){const mx=10+550*i/(sim.n-1),my=540-220*s.q/qmax,px=590+300*interp(s.q,Fr.Q,Fr.P);ctx.fillStyle='#d62728';[[mx,my],[px,my]].forEach(([x,y])=>{ctx.beginPath();ctx.arc(x,y,5,0,6.29);ctx.fill()});T('Today: '+(100*interp(s.q,Fr.Q,Fr.P)).toFixed(0)+'% exceedance',Math.min(px+8,800),my-8)}
+const dt=rec.d[i]||'day '+(i+1);$('stats').textContent=`Date: ${dt}\nRiver flow: ${(s.q||0).toFixed(2)} m³/s   Turbine flow: ${(s.turb||0).toFixed(2)} m³/s\nPower: ${(s.power||0).toFixed(0)} kW   Energy this year: ${(s.ytd/1000).toFixed(1)} MWh\nEnergy so far: ${(s.cum/1000).toFixed(1)} MWh   Running capacity factor: ${(100*s.cf).toFixed(1)} %`;$('scrub').value=i}
+let prev=0;function loop(t){const dt=Math.min(.1,(t-prev)/1000);prev=t;if(sim){if(playing&&!document.hidden){pos+=+$('spd').value*2*dt;if(pos>=sim.n-1){pos=sim.n-1;pause()}off+=dt*(20+180*(sim.q[Math.floor(pos)]/qmax||0))}
+const tf=sim.turb[Math.floor(pos)];if(playing&&tf>0)ang+=Math.min(6,6*tf/sim.qd)*dt;if(reveal<1)reveal=Math.min(1,reveal+dt/1.2);draw()}requestAnimationFrame(loop)}requestAnimationFrame(loop);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pause()});
+$('play').onclick=()=>{if(!sim)return;playing=!playing;$('play').textContent=playing?'Pause':'Play'};$('rst').onclick=()=>{if(sim){pause();go(0)}};
+$('bk').onclick=()=>{if(sim){pause();go(Math.floor(pos)-1)}};$('fw').onclick=()=>{if(sim){pause();go(Math.floor(pos)+1)}};
+const ext=f=>{let b=-1,v=0;sim.q.forEach((q,i)=>{if(q===q&&(b<0||f(q,v))){b=i;v=q}});go(b);pause()};$('wet').onclick=()=>sim&&ext((q,v)=>q>v);$('dry').onclick=()=>sim&&ext((q,v)=>q<v);
+$('scrub').oninput=e=>{pause();go(+e.target.value)};
+document.querySelectorAll('fieldset input,fieldset select').forEach(e=>{if(e.id!=='file')e.addEventListener('input',()=>recalc())});
+$('flows').addEventListener('input',()=>load($('flows').value.split(/[\s,;]+/).filter(Boolean).join('\n')));
+$('file').onchange=e=>e.target.files[0].text().then(load);
+$('ex').onclick=()=>fetch('synthetic_daily.csv').then(r=>{if(!r.ok)throw 0;return r.text()}).then(load).catch(()=>msg('Could not load the example here (browsers block this when a file is opened directly). Use the GitHub Pages link or python -m http.server in the docs folder, or pick examples/synthetic_daily.csv with the file chooser.'));
+$('png').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='scene.png';a.click()});
+</script></main></body></html>

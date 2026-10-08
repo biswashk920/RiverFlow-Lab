@@ -1,0 +1,11 @@
+Item,Value,Unit
+Net head,57.0,m
+Design flow (through turbine),3.9960000000000004,m3/s
+Minimum operating flow,1.5984000000000003,m3/s
+Installed capacity,1952.6196873783604,kW
+Average annual energy,12.159221718852663,GWh/year
+Capacity factor,71.03733292479743,%
+Flow volume used by turbine,45.20444738704596,% of river volume
+Time generating,93.56516976998904,% of record
+Energy compared with 'use all flow up to design flow',90.06445872583951,%
+Valid record length,9.998631074606434,years

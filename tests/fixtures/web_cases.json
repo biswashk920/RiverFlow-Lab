@@ -1,0 +1,126 @@
+[
+ {
+  "turbine": "francis",
+  "constEta": 0.88,
+  "minFlow": null,
+  "etaGen": 0.97,
+  "etaTrans": 0.99,
+  "avail": 95,
+  "rho": 1000,
+  "g": 9.81,
+  "envMode": "percent",
+  "envValue": 10,
+  "gross": 60,
+  "loss": 5,
+  "netHead": null,
+  "pct": 40,
+  "pos": "weibull",
+  "expected": {
+   "qd": 3.9960000000000004,
+   "installed_kw": 1952.6196873783604,
+   "total_energy_kwh": 121575572.1211497,
+   "annual_energy_gwh": 12.159221718852663,
+   "capacity_factor": 0.7103733292479743,
+   "flow_used_pct": 45.20444738704596,
+   "q_percentiles": {
+    "5": 23.293499999999998,
+    "25": 7.1775,
+    "50": 3.705000000000001,
+    "95": 1.68
+   }
+  }
+ },
+ {
+  "turbine": "pelton",
+  "constEta": 0.88,
+  "minFlow": null,
+  "etaGen": 0.97,
+  "etaTrans": 0.99,
+  "avail": 90,
+  "rho": 1000,
+  "g": 9.81,
+  "envMode": "fixed",
+  "envValue": 0.5,
+  "gross": 60,
+  "loss": 5,
+  "netHead": null,
+  "pct": 25,
+  "pos": "cunnane",
+  "expected": {
+   "qd": 6.6755,
+   "installed_kw": 3190.2491292264453,
+   "total_energy_kwh": 143019954.2895335,
+   "annual_energy_gwh": 14.303953533475386,
+   "capacity_factor": 0.5114816123339141,
+   "flow_used_pct": 56.637615498015386,
+   "q_percentiles": {
+    "5": 23.2897,
+    "25": 7.1755,
+    "50": 3.704999999999999,
+    "95": 1.68
+   }
+  }
+ },
+ {
+  "turbine": "constant",
+  "constEta": 0.88,
+  "minFlow": null,
+  "etaGen": 0.97,
+  "etaTrans": 0.99,
+  "avail": 95,
+  "rho": 1000,
+  "g": 9.81,
+  "envMode": "percent",
+  "envValue": 0,
+  "gross": 60,
+  "loss": 5,
+  "netHead": 50,
+  "pct": 60,
+  "pos": "hazen",
+  "expected": {
+   "qd": 3.22,
+   "installed_kw": 1334.7025322400007,
+   "total_energy_kwh": 99295173.3317906,
+   "annual_energy_gwh": 9.930876796121717,
+   "capacity_factor": 0.8487927146190475,
+   "flow_used_pct": 42.83439386576301,
+   "q_percentiles": {
+    "5": 23.287,
+    "25": 7.174999999999999,
+    "50": 3.705000000000001,
+    "95": 1.68
+   }
+  }
+ },
+ {
+  "turbine": "kaplan",
+  "constEta": 0.88,
+  "minFlow": 1.2,
+  "etaGen": 0.97,
+  "etaTrans": 0.99,
+  "avail": 95,
+  "rho": 998,
+  "g": 9.8,
+  "envMode": "percent",
+  "envValue": 10,
+  "gross": 60,
+  "loss": 5,
+  "netHead": null,
+  "qd": 5.0,
+  "pos": "blom",
+  "expected": {
+   "qd": 5.0,
+   "installed_kw": 2435.8458344220007,
+   "total_energy_kwh": 139609172.44643143,
+   "annual_energy_gwh": 13.962828651713876,
+   "capacity_factor": 0.6539162713431159,
+   "flow_used_pct": 51.558236602556384,
+   "q_percentiles": {
+    "5": 23.290125,
+    "25": 7.175625,
+    "50": 3.705,
+    "95": 1.68
+   }
+  }
+ }
+]
