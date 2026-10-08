@@ -1,7 +1,6 @@
 # RiverFlow Lab: Flow Duration Curve and Run-of-River Hydropower Calculator
 
 ### 👉 **[Open the interactive web app](https://biswashk920.github.io/RiverFlow-Lab/)** 👈
-(runs in your browser, nothing to install; if the link is not live yet, see "Publishing on GitHub Pages" below)
 
 Take a river flow record, build the **flow duration curve (FDC)**, pick a **design flow**, and estimate the
 installed capacity, annual energy and capacity factor of a **run-of-river hydropower scheme**. A simulation
